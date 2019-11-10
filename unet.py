@@ -37,7 +37,7 @@ def unet(input_shape, output_channel):
     def output(middle_filters, input_feature_map, output_channels):
         conv = conv2d_3x3(middle_filters)(input_feature_map)
         conv = conv2d_3x3(middle_filters)(conv)
-        probs = layers.Conv2D(output_channels, kernel_size=(1, 1), activation='sigmoid')(conv)
+        probs = layers.Conv2D(output_channels, kernel_size=(1, 1), activation='softmax')(conv)
         return probs
 
     # Contraction(cx = contraction_x, mfmx = multichannel_feature_map_x)
