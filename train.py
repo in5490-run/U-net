@@ -61,7 +61,8 @@ def read_image_and_segmentation(img_f, seg_f):
     water = tf.where(seg == 127, tf.ones_like(seg), tf.zeros_like(seg))
     buildings = tf.where(seg == 33, tf.ones_like(seg), tf.zeros_like(seg))
     roads = tf.where(seg == 76, tf.ones_like(seg), tf.zeros_like(seg))
-    seg = tf.concat([buildings, roads, water], 2)
+    void = tf.where(seg == 255, tf.ones_like(seg), tf.zeros_like(seg))
+    seg = tf.concat([buildings, roads, water, void], 2)
 
     return img, seg
 
@@ -99,36 +100,37 @@ def image_filenames(dataset_folder, training=True):
     return image_names, segmentation_names
 
 
-def vis_mask(image, mask, alpha=0.4):
+def vis_mask(image, mask, alpha=0.5):
     """Visualize mask on top of image, blend using 'alpha'."""
 
     # Note that as images are normalized, 1 is max-value
     buildings = mask[:, :, :, 0:1]
-    # roads = mask[:, :, :, 1:2]
-    # water = mask[:, :, :, 2:]
+    roads = mask[:, :, :, 1:2]
+    water = mask[:, :, :, 2:3]
     red = tf.zeros_like(image) + tf.constant([1, 0, 0], dtype=tf.float32)
-    # green = tf.zeros_like(image) + tf.constant([0, 1, 0], dtype=tf.float32)
-    # blue = tf.zeros_like(image) + tf.constant([0, 0, 1], dtype=tf.float32)
+    green = tf.zeros_like(image) + tf.constant([0, 1, 0], dtype=tf.float32)
+    blue = tf.zeros_like(image) + tf.constant([0, 0, 1], dtype=tf.float32)
     vis = tf.where(buildings, alpha * image + (1 - alpha) * red, image)
-    # vis = tf.where(roads, alpha * image + (1 - alpha) * green, vis)
-    # vis = tf.where(water, alpha * image + (1 - alpha) * blue, vis)
-    # vis = tf.where(water, alpha * image + (1 - alpha) * blue, vis)
+    vis = tf.where(roads, alpha * image + (1 - alpha) * green, vis)
+    vis = tf.where(water, alpha * image + (1 - alpha) * blue, vis)
 
     return vis
 
 
 def main(train_dir):
-    train_epochs = 4
-    batch_size = 4
+    # Hyper-parameters
+    train_epochs = 100
+    batch_size = 10
+    learning_rate = 1e-4
+    beta1 = 0.9
 
     # Getting filenames from the dataset
     image_names, segmentation_names = image_filenames('data')
 
     # Divide into train and test set.
     len_data = len(image_names)
-    train_start_idx, train_end_idx = (0, len_data//100*80)
-    val_start_idx, val_end_idx = (320, len_data-1)
-
+    train_start_idx, train_end_idx = (0, len_data // 100 * 80)
+    val_start_idx, val_end_idx = (320, len_data - 1)
 
     preprocess_train = preprocess
     preprocess_val = preprocess
@@ -152,7 +154,7 @@ def main(train_dir):
     model = unet.unet((HEIGHT, WIDTH, 3), SEGMENTATION_CLASSES)
 
     loss_fn = losses.CategoricalCrossentropy()
-    optimizer = optimizers.Adam(lr=1e-4)
+    optimizer = optimizers.Adam(lr=learning_rate)
 
     print("Summaries are written to '%s'." % train_dir)
     writer = tf.summary.create_file_writer(train_dir, flush_millis=3000)
@@ -178,7 +180,6 @@ def main(train_dir):
                 y_pred = model(image)
                 loss = loss_fn(y, y_pred)
 
-            print(loss)
             grads = tape.gradient(loss, model.trainable_variables)
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
@@ -190,6 +191,7 @@ def main(train_dir):
             train_recall.update_state(y, y_pred)
             step += 1
 
+            activation = 1 / SEGMENTATION_CLASSES
             if step % summary_interval == 0:
                 duration = time.time() - start
                 print("step %d. sec/batch: %g. Train loss: %g" % (
@@ -201,7 +203,7 @@ def main(train_dir):
                     tf.summary.scalar("train_accuracy", train_accuracy.result(), step=step)
                     tf.summary.scalar("train_precision", train_precision.result(), step=step)
                     tf.summary.scalar("train_recall", train_recall.result(), step=step)
-                    vis = vis_mask(image, y_pred >= 0.5)
+                    vis = vis_mask(image, y_pred >= activation)
                     tf.summary.image("train_image", vis, step=step)
 
                 # reset metrics and time
@@ -223,7 +225,7 @@ def main(train_dir):
             val_recall.update_state(y, y_pred)
 
             with writer.as_default():
-                vis = vis_mask(image, y_pred >= 0.5)
+                vis = vis_mask(image, y_pred >= activation)
                 tf.summary.image("val_image_batch_%d" % i, vis, step=step, max_outputs=batch_size)
 
         with writer.as_default():
