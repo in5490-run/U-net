@@ -11,7 +11,7 @@ import unet
 HEIGHT = 256
 WIDTH = 256
 
-SEGMENTATION_CLASSES = 4
+SEGMENTATION_CLASSES = 3
 
 
 def generator_for_filenames(*filenames):
@@ -49,7 +49,7 @@ def preprocess(image, segmentation):
 
 def read_image_and_segmentation(img_f, seg_f):
     """
-    Read images from file using tensorflow and convert the segmentation to appropriate formate.
+    Read images from file using tensorflow and convert the segmentation to appropriate format.
     :param img_f: filename for image
     :param seg_f: filename for segmentation
     :return: Image and segmentation tensors
@@ -57,8 +57,12 @@ def read_image_and_segmentation(img_f, seg_f):
     img_reader = tf.io.read_file(img_f)
     seg_reader = tf.io.read_file(seg_f)
     img = tf.image.decode_png(img_reader, channels=3)
-    seg = tf.image.decode_png(seg_reader)[:, :, SEGMENTATION_CLASSES:]
-    seg = tf.where(seg > 0, tf.ones_like(seg), tf.zeros_like(seg))
+    seg = tf.image.decode_png(seg_reader)[:, :, 1:2]
+    water = tf.where(seg == 127, tf.ones_like(seg), tf.zeros_like(seg))
+    buildings = tf.where(seg == 33, tf.ones_like(seg), tf.zeros_like(seg))
+    roads = tf.where(seg == 76, tf.ones_like(seg), tf.zeros_like(seg))
+    seg = tf.concat([buildings, roads, water], 2)
+
     return img, seg
 
 
@@ -89,9 +93,9 @@ def dataset_from_filenames(image_names, segmentation_names, preprocess=preproces
 
 def image_filenames(dataset_folder, training=True):
     sub_dataset = 'training' if training else 'testing'
-    segmentation_names = glob.glob(os.path.join(dataset_folder, sub_dataset, 'gt_image_2', '*road*.png'),
+    segmentation_names = glob.glob(os.path.join(dataset_folder, sub_dataset, 'y', '*y*.png'),
                                    recursive=True)
-    image_names = [f.replace('gt_image_2', 'image_2').replace('_road_', '_') for f in segmentation_names]
+    image_names = [f.replace('y', 'x') for f in segmentation_names]
     return image_names, segmentation_names
 
 
@@ -99,8 +103,16 @@ def vis_mask(image, mask, alpha=0.4):
     """Visualize mask on top of image, blend using 'alpha'."""
 
     # Note that as images are normalized, 1 is max-value
+    buildings = mask[:, :, :, 0:1]
+    # roads = mask[:, :, :, 1:2]
+    # water = mask[:, :, :, 2:]
     red = tf.zeros_like(image) + tf.constant([1, 0, 0], dtype=tf.float32)
-    vis = tf.where(mask, alpha * image + (1 - alpha) * red, image)
+    # green = tf.zeros_like(image) + tf.constant([0, 1, 0], dtype=tf.float32)
+    # blue = tf.zeros_like(image) + tf.constant([0, 0, 1], dtype=tf.float32)
+    vis = tf.where(buildings, alpha * image + (1 - alpha) * red, image)
+    # vis = tf.where(roads, alpha * image + (1 - alpha) * green, vis)
+    # vis = tf.where(water, alpha * image + (1 - alpha) * blue, vis)
+    # vis = tf.where(water, alpha * image + (1 - alpha) * blue, vis)
 
     return vis
 
@@ -110,7 +122,7 @@ def main(train_dir):
     train_start_idx, train_end_idx = (0, 272)
     val_start_idx, val_end_idx = (272, 287)
 
-    train_epochs = 10
+    train_epochs = 4
     batch_size = 4
 
     # Getting filenames from the dataset
@@ -137,18 +149,18 @@ def main(train_dir):
 
     model = unet.unet((HEIGHT, WIDTH, 3), SEGMENTATION_CLASSES)
 
+    loss_fn = losses.CategoricalCrossentropy()
     optimizer = optimizers.Adam(lr=1e-4)
-    loss_fn = losses.BinaryCrossentropy(from_logits=False)
 
     print("Summaries are written to '%s'." % train_dir)
     writer = tf.summary.create_file_writer(train_dir, flush_millis=3000)
     summary_interval = 10
 
-    train_accuracy = metrics.BinaryAccuracy(threshold=0.5)
+    train_accuracy = metrics.Accuracy()
     train_loss = metrics.Mean()
     train_precision = metrics.Precision()
     train_recall = metrics.Recall()
-    val_accuracy = metrics.BinaryAccuracy(threshold=0.5)
+    val_accuracy = metrics.Accuracy()
     val_loss = metrics.Mean()
     val_precision = metrics.Precision()
     val_recall = metrics.Recall()
@@ -162,6 +174,7 @@ def main(train_dir):
                 y_pred = model(image)
                 loss = loss_fn(y, y_pred)
 
+            print(loss)
             grads = tape.gradient(loss, model.trainable_variables)
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
