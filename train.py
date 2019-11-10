@@ -11,7 +11,7 @@ import unet
 HEIGHT = 256
 WIDTH = 256
 
-SEGMENTATION_CLASSES = 3
+SEGMENTATION_CLASSES = 4
 
 
 def generator_for_filenames(*filenames):
@@ -118,15 +118,17 @@ def vis_mask(image, mask, alpha=0.4):
 
 
 def main(train_dir):
-    # Divide into train and test set.
-    train_start_idx, train_end_idx = (0, 272)
-    val_start_idx, val_end_idx = (272, 287)
-
     train_epochs = 4
     batch_size = 4
 
     # Getting filenames from the dataset
     image_names, segmentation_names = image_filenames('data')
+
+    # Divide into train and test set.
+    len_data = len(image_names)
+    train_start_idx, train_end_idx = (0, len_data//100*80)
+    val_start_idx, val_end_idx = (320, len_data-1)
+
 
     preprocess_train = preprocess
     preprocess_val = preprocess
