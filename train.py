@@ -37,9 +37,16 @@ def preprocess(image, segmentation):
     segmentation = tf.image.resize(segmentation, [HEIGHT, WIDTH], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 
     # Augmentation
+    # Flip
     if tf.random.uniform(()) > 0.5:
         image = tf.image.flip_left_right(image)
         segmentation = tf.image.flip_left_right(segmentation)
+
+    # Rotate
+    if tf.random.uniform(()) > 0.5:
+        rot_deg = tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)
+        tf.image.rot90(image, rot_deg)
+        tf.image.rot90(segmentation, rot_deg)
 
     image = tf.cast(image, tf.float32) / 255
     segmentation = tf.cast(segmentation, tf.int64)
@@ -119,10 +126,10 @@ def vis_mask(image, mask, alpha=0.5):
 
 def main(train_dir):
     # Hyper-parameters
-    train_epochs = 100
-    batch_size = 10
+    train_epochs = 30
+    batch_size = 5
     learning_rate = 1e-4
-    beta1 = 0.9
+    beta_1 = 0.9
 
     # Getting filenames from the dataset
     image_names, segmentation_names = image_filenames('data')
@@ -154,7 +161,7 @@ def main(train_dir):
     model = unet.unet((HEIGHT, WIDTH, 3), SEGMENTATION_CLASSES)
 
     loss_fn = losses.CategoricalCrossentropy()
-    optimizer = optimizers.Adam(lr=learning_rate)
+    optimizer = optimizers.Adam(lr=learning_rate, beta_1=beta_1)
 
     print("Summaries are written to '%s'." % train_dir)
     writer = tf.summary.create_file_writer(train_dir, flush_millis=3000)
