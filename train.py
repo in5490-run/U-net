@@ -8,8 +8,8 @@ from tensorflow.keras import losses, metrics, optimizers
 
 import unet
 
-HEIGHT = 288
-WIDTH = 288
+HEIGHT = 304
+WIDTH = 304
 
 SEGMENTATION_CLASSES = 4
 
@@ -131,7 +131,7 @@ def vis_mask(image, mask, alpha=0.5):
 
 def main(train_dir):
     # Hyper-parameters
-    train_epochs = 100
+    train_epochs = 10
     batch_size = 4
     learning_rate = 1e-4
     beta_1 = 0.9
@@ -177,16 +177,18 @@ def main(train_dir):
     writer = tf.summary.create_file_writer(model_dir, flush_millis=3000)
     summary_interval = 10
 
-    train_accuracy = metrics.CategoricalAccuracy()
     train_loss = metrics.Mean()
-    train_hinge_loss = metrics.CategoricalHinge()
+    train_iou = metrics.MeanIoU(num_classes=SEGMENTATION_CLASSES)
     train_precision = metrics.Precision()
     train_recall = metrics.Recall()
-    val_accuracy = metrics.CategoricalAccuracy()
+    train_accuracy = metrics.CategoricalAccuracy()
+
     val_loss = metrics.Mean()
-    val_hinge_loss = metrics.CategoricalHinge()
+    val_iou = metrics.MeanIoU(num_classes=SEGMENTATION_CLASSES)
     val_precision = metrics.Precision()
     val_recall = metrics.Recall()
+    val_accuracy = metrics.CategoricalAccuracy()
+
     step = 0
     start_training = start = time.time()
     for epoch in range(train_epochs):
@@ -202,10 +204,10 @@ def main(train_dir):
 
             # update metrics and step
             train_loss.update_state(loss)
-            train_hinge_loss.update_state(y, y_pred)
-            train_accuracy.update_state(y, y_pred)
+            train_iou.update_state(y, y_pred)
             train_precision.update_state(y, y_pred)
             train_recall.update_state(y, y_pred)
+            train_accuracy.update_state(y, y_pred)
             step += 1
 
             activation = 1 / SEGMENTATION_CLASSES
@@ -216,19 +218,19 @@ def main(train_dir):
                 # write summaries to TensorBoard
                 with writer.as_default():
                     tf.summary.scalar("train_loss", train_loss.result(), step=step)
-                    tf.summary.scalar("train_hinge_loss", train_hinge_loss.result(), step=step)
-                    tf.summary.scalar("train_accuracy", train_accuracy.result(), step=step)
+                    tf.summary.scalar("train_iou", train_iou.result(), step=step)
                     tf.summary.scalar("train_precision", train_precision.result(), step=step)
                     tf.summary.scalar("train_recall", train_recall.result(), step=step)
+                    tf.summary.scalar("train_accuracy", train_accuracy.result(), step=step)
                     vis = vis_mask(image, y_pred >= activation)
                     tf.summary.image("train_image", vis, step=step)
 
                 # reset metrics and time
                 train_loss.reset_states()
-                train_hinge_loss.reset_states()
-                train_accuracy.reset_states()
+                train_iou.reset_states()
                 train_precision.reset_states()
                 train_recall.reset_states()
+                train_accuracy.reset_states()
                 start = time.time()
 
         # Do validation after each epoch
@@ -236,10 +238,10 @@ def main(train_dir):
             y_pred = model(image)
             loss = loss_fn(y, y_pred)
             val_loss.update_state(loss)
-            val_hinge_loss.update_state(y, y_pred)
-            val_accuracy.update_state(y, y_pred)
+            val_iou.update_state(y, y_pred)
             val_precision.update_state(y, y_pred)
             val_recall.update_state(y, y_pred)
+            val_accuracy.update_state(y, y_pred)
 
             with writer.as_default():
                 vis = vis_mask(image, y_pred >= activation)
@@ -247,15 +249,15 @@ def main(train_dir):
 
         with writer.as_default():
             tf.summary.scalar("val_loss", val_loss.result(), step=step)
-            tf.summary.scalar("val_hinge_loss", val_hinge_loss.result(), step=step)
-            tf.summary.scalar("val_accuracy", val_accuracy.result(), step=step)
+            tf.summary.scalar("val_iou", val_iou.result(), step=step)
             tf.summary.scalar("val_precision", val_precision.result(), step=step)
             tf.summary.scalar("val_recall", val_recall.result(), step=step)
+            tf.summary.scalar("val_accuracy", val_accuracy.result(), step=step)
         val_loss.reset_states()
-        val_hinge_loss.reset_states()
-        val_accuracy.reset_states()
+        val_iou.reset_states()
         val_precision.reset_states()
         val_recall.reset_states()
+        val_accuracy.reset_states()
 
     print("Finished training %d epochs in %g minutes." % (
         train_epochs, (time.time() - start_training) / 60))
