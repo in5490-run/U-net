@@ -8,9 +8,11 @@ from tensorflow.keras import losses, metrics, optimizers
 
 import unet
 
+# Image size, must conform to bit-sizes.
 HEIGHT = 304
 WIDTH = 304
 
+# Number of segmentation classes
 SEGMENTATION_CLASSES = 4
 
 
@@ -28,8 +30,8 @@ def generator_for_filenames(*filenames):
 
 def preprocess(image, segmentation):
     """
-    A preprocess function the is run after images are read. Here you can do augmentation and other
-    processesing on the images.
+    A preprocess function that is run after images are read.
+    Includes som data augmentations.
     """
 
     # Set images size to a constant
@@ -70,6 +72,8 @@ def read_image_and_segmentation(img_f, seg_f):
     seg_reader = tf.io.read_file(seg_f)
     img = tf.image.decode_png(img_reader, channels=3)
     seg = tf.image.decode_png(seg_reader)[:, :, 1:2]
+
+    # Extract segmentation classes
     water = tf.where(seg == 127, tf.ones_like(seg), tf.zeros_like(seg))
     buildings = tf.where(seg == 33, tf.ones_like(seg), tf.zeros_like(seg))
     roads = tf.where(seg == 76, tf.ones_like(seg), tf.zeros_like(seg))
@@ -105,6 +109,12 @@ def dataset_from_filenames(image_names, segmentation_names, preprocess=preproces
 
 
 def image_filenames(dataset_folder, training=True):
+    """
+    Gets filenames for images and segmentation images
+    :param dataset_folder: Folder where dataset is located
+    :param training: True if training, false if testing/validation
+    :return: Two lists for image names and segmentation image names
+    """
     sub_dataset = 'training' if training else 'testing'
     segmentation_names = glob.glob(os.path.join(dataset_folder, sub_dataset, 'y', '*y*.png'),
                                    recursive=True)
@@ -115,13 +125,15 @@ def image_filenames(dataset_folder, training=True):
 def vis_mask(image, mask, alpha=0.5):
     """Visualize mask on top of image, blend using 'alpha'."""
 
-    # Note that as images are normalized, 1 is max-value
+    # Images are normalized, 1 is max-value
     buildings = mask[:, :, :, 0:1]
     roads = mask[:, :, :, 1:2]
     water = mask[:, :, :, 2:3]
+
     red = tf.zeros_like(image) + tf.constant([1, 0, 0], dtype=tf.float32)
     green = tf.zeros_like(image) + tf.constant([0, 1, 0], dtype=tf.float32)
     blue = tf.zeros_like(image) + tf.constant([0, 0, 1], dtype=tf.float32)
+
     vis = tf.where(buildings, alpha * image + (1 - alpha) * red, image)
     vis = tf.where(roads, alpha * image + (1 - alpha) * green, vis)
     vis = tf.where(water, alpha * image + (1 - alpha) * blue, vis)
@@ -131,7 +143,7 @@ def vis_mask(image, mask, alpha=0.5):
 
 def main(train_dir):
     # Hyper-parameters
-    train_epochs = 10
+    train_epochs = 100
     batch_size = 4
     learning_rate = 1e-4
     beta_1 = 0.9
@@ -202,7 +214,7 @@ def main(train_dir):
             grads = tape.gradient(loss, model.trainable_variables)
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
-            # update metrics and step
+            # Update metrics and step
             train_loss.update_state(loss)
             train_iou.update_state(y, y_pred)
             train_precision.update_state(y, y_pred)
@@ -215,7 +227,7 @@ def main(train_dir):
                 duration = time.time() - start
                 print("step %d. sec/batch: %g. Train loss: %g" % (
                     step, duration / summary_interval, train_loss.result().numpy()))
-                # write summaries to TensorBoard
+                # Write summaries to TensorBoard
                 with writer.as_default():
                     tf.summary.scalar("train_loss", train_loss.result(), step=step)
                     tf.summary.scalar("train_iou", train_iou.result(), step=step)
@@ -225,7 +237,7 @@ def main(train_dir):
                     vis = vis_mask(image, y_pred >= activation)
                     tf.summary.image("train_image", vis, step=step)
 
-                # reset metrics and time
+                # Reset metrics and time
                 train_loss.reset_states()
                 train_iou.reset_states()
                 train_precision.reset_states()
