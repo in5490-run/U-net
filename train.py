@@ -8,8 +8,8 @@ from tensorflow.keras import losses, metrics, optimizers
 
 import unet
 
-HEIGHT = 256
-WIDTH = 256
+HEIGHT = 288
+WIDTH = 288
 
 SEGMENTATION_CLASSES = 4
 
@@ -37,10 +37,15 @@ def preprocess(image, segmentation):
     segmentation = tf.image.resize(segmentation, [HEIGHT, WIDTH], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 
     # Augmentation
-    # Flip
+    # Flip left-right
     if tf.random.uniform(()) > 0.5:
         image = tf.image.flip_left_right(image)
         segmentation = tf.image.flip_left_right(segmentation)
+
+    # Flip up-down
+    if tf.random.uniform(()) > 0.5:
+        image = tf.image.flip_up_down(image)
+        segmentation = tf.image.flip_up_down(segmentation)
 
     # Rotate
     if tf.random.uniform(()) > 0.5:
@@ -126,10 +131,15 @@ def vis_mask(image, mask, alpha=0.5):
 
 def main(train_dir):
     # Hyper-parameters
-    train_epochs = 30
-    batch_size = 5
+    train_epochs = 100
+    batch_size = 4
     learning_rate = 1e-4
     beta_1 = 0.9
+
+    # Model folder and names
+    model_name = "{}px_{}py_{}e_{}b_{}lr_{}b1".format(HEIGHT, WIDTH, train_epochs, batch_size, learning_rate, beta_1)
+    model_file_name = "{}.h5".format(model_name)
+    model_dir = os.path.join(train_dir, model_name)
 
     # Getting filenames from the dataset
     image_names, segmentation_names = image_filenames('data')
@@ -163,8 +173,8 @@ def main(train_dir):
     loss_fn = losses.CategoricalCrossentropy()
     optimizer = optimizers.Adam(lr=learning_rate, beta_1=beta_1)
 
-    print("Summaries are written to '%s'." % train_dir)
-    writer = tf.summary.create_file_writer(train_dir, flush_millis=3000)
+    print("Summaries are written to '%s'." % model_dir)
+    writer = tf.summary.create_file_writer(model_dir, flush_millis=3000)
     summary_interval = 10
 
     train_accuracy = metrics.CategoricalAccuracy()
@@ -250,7 +260,7 @@ def main(train_dir):
     print("Finished training %d epochs in %g minutes." % (
         train_epochs, (time.time() - start_training) / 60))
     # save a model which we can later load by tf.keras.models.load_model(model_path)
-    model_path = os.path.join(train_dir, "model.h5")
+    model_path = os.path.join(model_dir, model_file_name)
     print("Saving model to '%s'." % model_path)
     model.save(model_path)
     print(model.summary())
