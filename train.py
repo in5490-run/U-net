@@ -9,8 +9,8 @@ from tensorflow.keras import losses, metrics, optimizers
 import unet
 
 # Image size, must conform to bit-sizes.
-HEIGHT = 304
-WIDTH = 304
+HEIGHT = 512
+WIDTH = 512
 
 # Number of segmentation classes
 SEGMENTATION_CLASSES = 4
@@ -88,7 +88,7 @@ def dataset_from_filenames(image_names, segmentation_names, preprocess=preproces
     Convert a list of filenames to tensorflow images.
     :param image_names: image filenames
     :param segmentation_names: segmentation filenames
-    :param preprocess: A function that is run after the images are read, the takes image and
+    :param preprocess: A function that is run after the images are read, takes image and
     segmentation as input
     :param batch_size: The batch size returned from the function
     :return: Tensors with images and corresponding segmentations
@@ -143,9 +143,9 @@ def vis_mask(image, mask, alpha=0.5):
 
 def main(train_dir):
     # Hyper-parameters
-    train_epochs = 100
-    batch_size = 4
-    learning_rate = 1e-4
+    train_epochs = 200
+    batch_size = 2
+    learning_rate = 1e-5
     beta_1 = 0.9
 
     # Model folder and names
@@ -159,7 +159,7 @@ def main(train_dir):
     # Divide into train and test set.
     len_data = len(image_names)
     train_start_idx, train_end_idx = (0, len_data // 100 * 80)
-    val_start_idx, val_end_idx = (320, len_data - 1)
+    val_start_idx, val_end_idx = (len_data // 100*80, len_data - 1)
 
     preprocess_train = preprocess
     preprocess_val = preprocess
